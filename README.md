@@ -49,3 +49,16 @@ mvn spring-boot:run
 cd ../frontend
 pnpm install
 pnpm dev
+
+# Start all
+docker compose build
+docker compose up
+
+# important
+# per Session
+setx DOCKER_BUILDKIT 1
+$env:DOCKER_BUILDKIT=1   # PowerShell
+
+# oder bei compose
+setx COMPOSE_DOCKER_CLI_BUILD 1
+$env:COMPOSE_DOCKER_CLI_BUILD=1
