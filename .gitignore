@@ -1,0 +1,68 @@
+# === BACKEND (Spring Boot / Maven) ===
+backend/HELP.md
+backend/target/
+backend/.mvn/wrapper/maven-wrapper.jar
+!backend/**/src/main/**/target/
+!backend/**/src/test/**/target/
+
+# Maven wrapper / build
+**/.mvn/
+**/target/
+**/build/
+**/*.log
+**/.classpath
+**/.project
+**/.settings/
+**/.factorypath
+**/.springBeans
+**/.sts4-cache
+
+# === FRONTEND (React / Vite / Node) ===
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.eslintcache
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.production.local
+frontend/coverage/
+
+# === IDEs ===
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.apt_generated
+
+# === NetBeans (legacy) ===
+**/nbproject/private/
+**/nbbuild/
+**/dist/
+**/nbdist/
+**/.nb-gradle/
+
+# === OS / Common ===
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+*.bak
+*.env
+*.env.*
+logs/
+*.log
+
+# === DOCKER & INFRA ===
+docker/*.log
+infra/.terraform/
+infra/terraform.tfstate*
+infra/*.tfplan
+
+# === TEST / TEMP ===
+**/__pycache__/
+**/.pytest_cache/
+**/.gradle/
+**/.cache/
+tmp/
+temp/
