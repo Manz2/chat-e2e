@@ -7,7 +7,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequiredArgsConstructor
@@ -19,8 +21,14 @@ public class AppUserController {
 
     @GetMapping
     @Operation(summary = "List all users")
-    public List<AppUser> getAll() {
-        return service.findAll();
+    public List<UserResponse> getAll() {
+        return service.findAll().stream().map(UserResponse::from).toList();
+    }
+
+    public record UserResponse(UUID id, String handle, String displayName, boolean twoFaEnabled, Instant createdAt) {
+        static UserResponse from(AppUser u) {
+            return new UserResponse(u.getId(), u.getHandle(), u.getDisplayName(), u.isTwoFaEnabled(), u.getCreatedAt());
+        }
     }
 
     @GetMapping("/{handle}")
@@ -31,14 +39,6 @@ public class AppUserController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    @PostMapping
-    @Operation(summary = "Create new user")
-    public ResponseEntity<AppUser> create(@RequestBody CreateUserRequest req) {
-        AppUser user = service.createUser(req.handle(), req.displayName());
-        return ResponseEntity.ok(user);
-    }
-    public record CreateUserRequest(String handle, String displayName) {}
-
 
     @PostMapping("/register")
     public ResponseEntity<AppUser> register(@RequestBody RegisterUserRequest req) {
@@ -47,3 +47,4 @@ public class AppUserController {
     }
     public record RegisterUserRequest(String handle, String displayName, String password) {}
 }
+

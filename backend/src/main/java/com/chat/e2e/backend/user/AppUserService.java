@@ -22,15 +22,11 @@ public class AppUserService {
         return repo.findByHandle(handle);
     }
 
-    public AppUser createUser(String handle, String displayName) {
-        AppUser user = AppUser.builder()
-                .handle(handle)
-                .displayName(displayName)
-                .build();
-        return repo.save(user);
-    }
-
     public AppUser register(String handle, String displayName, String rawPassword) {
+        repo.findByHandle(handle).ifPresent(u -> {
+            throw new IllegalArgumentException("Handle already taken");
+        });
+
         String hash = passwordEncoder.encode(rawPassword);
 
         AppUser user = AppUser.builder()
@@ -41,6 +37,7 @@ public class AppUserService {
 
         return repo.save(user);
     }
+
 
     public boolean verifyPassword(AppUser user, String rawPassword) {
         return passwordEncoder.matches(rawPassword, user.getPasswordHash());

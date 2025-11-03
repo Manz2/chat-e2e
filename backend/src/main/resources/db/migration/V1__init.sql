@@ -1,4 +1,7 @@
 -- V1__init.sql
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- Users
 CREATE TABLE app_user (
                           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                           handle TEXT UNIQUE NOT NULL,
@@ -8,6 +11,33 @@ CREATE TABLE app_user (
                           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Devices
+CREATE TABLE user_device (
+                             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                             user_id UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+                             device_name TEXT,
+                             platform TEXT,                             -- "ios","android","web","desktop"
+                             public_identity_key TEXT NOT NULL,         -- IK_pub (Base64/PEM)
+                             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                             last_seen_at TIMESTAMPTZ
+);
+CREATE INDEX idx_user_device_user ON user_device(user_id);
+
+-- Key type enum
+CREATE TYPE user_key_type AS ENUM ('signed_prekey', 'one_time_prekey');
+
+-- Public PreKeys per device
+CREATE TABLE user_key (
+                          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                          device_id UUID NOT NULL REFERENCES user_device(id) ON DELETE CASCADE,
+                          type user_key_type NOT NULL,
+                          public_key TEXT NOT NULL,
+                          is_used BOOLEAN NOT NULL DEFAULT FALSE,    -- for OPKs
+                          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_user_key_device_type ON user_key(device_id, type);
+
+-- Conversations
 CREATE TABLE conversation (
                               id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                               is_group BOOLEAN NOT NULL DEFAULT FALSE,
@@ -20,13 +50,29 @@ CREATE TABLE conversation_member (
                                      role TEXT DEFAULT 'member',
                                      PRIMARY KEY (conversation_id, user_id)
 );
+CREATE INDEX idx_conv_member_user ON conversation_member(user_id);
 
-CREATE TABLE message (
-                         id BIGSERIAL PRIMARY KEY,
-                         conversation_id UUID NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
-                         sender_id UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
-                         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                         ciphertext TEXT NOT NULL,
-                         header JSONB
+-- Messages (logical)
+CREATE TABLE message_core (
+                              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                              conversation_id UUID NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+                              sender_id UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+                              created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                              content_type TEXT NOT NULL DEFAULT 'text',
+                              header JSONB
 );
-CREATE INDEX idx_msg_conv_created ON message(conversation_id, created_at);
+CREATE INDEX idx_msg_core_conv_created ON message_core(conversation_id, created_at);
+
+-- Per-device ciphertext
+CREATE TABLE message_delivery (
+                                  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                                  message_id UUID NOT NULL REFERENCES message_core(id) ON DELETE CASCADE,
+                                  recipient_device_id UUID NOT NULL REFERENCES user_device(id) ON DELETE CASCADE,
+                                  ciphertext BYTEA NOT NULL,
+                                  ratchet_header JSONB,
+                                  delivered_at TIMESTAMPTZ,
+                                  read_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX uq_delivery_per_device ON message_delivery(message_id, recipient_device_id);
+CREATE INDEX idx_delivery_device ON message_delivery(recipient_device_id);
+CREATE INDEX idx_delivery_message ON message_delivery(message_id);

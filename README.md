@@ -32,6 +32,11 @@ Runs locally via **Docker Compose** and can easily be deployed to **AWS or GCP**
 
 ---
 
+## Encription
+- This Application uses X3DH https://www.youtube.com/watch?v=1R8lruHAbvY
+- New when a new Device is registered all messages are also encrypted for this device
+- A new device can not see old Messages only those send since the registration
+
 ## 🧑‍💻 Local Development
 
 **Requirements:**
@@ -41,6 +46,7 @@ Runs locally via **Docker Compose** and can easily be deployed to **AWS or GCP**
 - Docker & Docker Compose
 - Rest documentation http://localhost:8080/swagger-ui/index.html
 - Health staus http://localhost:8080/actuator/health
+- X3DH https://www.youtube.com/watch?v=1R8lruHAbvY
 
 ```bash
 # Start backend

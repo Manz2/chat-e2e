@@ -15,20 +15,20 @@ public class AppUser {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private UUID id;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false, unique = true, length = 64)
     private String handle;
 
-    @Column(nullable = false, unique = true)
+    @Column(length = 128)
     private String displayName;
 
-    @Column(nullable = false, updatable = false)
-    private Instant createdAt = Instant.now();
-
-    @Column(nullable = false)
+    @Column(name = "password_hash")
     private String passwordHash;
 
     @Column(nullable = false)
     private boolean twoFaEnabled = false;
+
+    @Column(nullable = false, updatable = false)
+    private Instant createdAt = Instant.now();
 
     @PrePersist
     protected void onCreate() {
