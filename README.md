@@ -39,6 +39,8 @@ Runs locally via **Docker Compose** and can easily be deployed to **AWS or GCP**
 - Maven 3.9+
 - Node 20+ with pnpm 9+
 - Docker & Docker Compose
+- Rest documentation http://localhost:8080/swagger-ui/index.html
+- Health staus http://localhost:8080/actuator/health
 
 ```bash
 # Start backend
@@ -65,3 +67,7 @@ $env:COMPOSE_DOCKER_CLI_BUILD=1
 
 # run for local db
 docker-compose.db.yml
+
+# clear local db
+docker compose -f docker-compose.db.yml down -v
+docker compose -f docker-compose.db.yml up -d

@@ -2,6 +2,9 @@
 CREATE TABLE app_user (
                           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                           handle TEXT UNIQUE NOT NULL,
+                          display_name TEXT,
+                          password_hash TEXT NOT NULL,
+                          two_fa_enabled BOOLEAN NOT NULL DEFAULT FALSE,
                           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -27,4 +30,3 @@ CREATE TABLE message (
                          header JSONB
 );
 CREATE INDEX idx_msg_conv_created ON message(conversation_id, created_at);
-
