@@ -1,5 +1,6 @@
 package com.chat.e2e.backend.user;
 
+import com.chat.e2e.backend.api.dto.DTOs;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -41,10 +42,10 @@ public class AppUserController {
 
 
     @PostMapping("/register")
-    public ResponseEntity<AppUser> register(@RequestBody RegisterUserRequest req) {
+    public ResponseEntity<AppUser> register(@RequestBody DTOs.RegisterUserRequest req) {
         AppUser user = service.register(req.handle(), req.displayName(), req.password());
         return ResponseEntity.status(HttpStatus.CREATED).body(user);
     }
-    public record RegisterUserRequest(String handle, String displayName, String password) {}
+
 }
 

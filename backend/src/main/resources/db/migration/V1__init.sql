@@ -11,31 +11,58 @@ CREATE TABLE app_user (
                           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+
 -- Devices
 CREATE TABLE user_device (
                              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                              user_id UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
                              device_name TEXT,
-                             platform TEXT,                             -- "ios","android","web","desktop"
-                             public_identity_key TEXT NOT NULL,         -- IK_pub (Base64/PEM)
+                             platform TEXT,                                   -- "ios","android","web","desktop"
+                             public_identity_key TEXT NOT NULL,               -- IK_pub (Base64/PEM)
+                             public_identity_key_id INTEGER,
+                             public_identity_key_sig BYTEA,
+                             key_curve TEXT DEFAULT 'x25519',
+                             pqkem_public_key BYTEA,                          -- PQXDH (z. B. Kyber Public Key)
+                             cert_payload JSONB,
+                             cert_issued_at TIMESTAMPTZ,
+                             cert_expires_at TIMESTAMPTZ,
+                             cert_alg TEXT DEFAULT 'Ed25519',
+                             cert_serial TEXT,
+                             revoked_at TIMESTAMPTZ,
                              created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                             last_seen_at TIMESTAMPTZ
+                             last_seen_at TIMESTAMPTZ,
+                             CONSTRAINT chk_key_curve CHECK (key_curve IN ('x25519','x448')),
+                             CONSTRAINT chk_cert_times CHECK (
+                                 cert_issued_at IS NULL
+                                     OR cert_expires_at IS NULL
+                                     OR cert_expires_at > cert_issued_at
+                                 )
 );
 CREATE INDEX idx_user_device_user ON user_device(user_id);
 
+
 -- Key type enum
-CREATE TYPE user_key_type AS ENUM ('signed_prekey', 'one_time_prekey');
+CREATE TYPE user_key_type AS ENUM ('signed_prekey', 'one_time_prekey', 'pqkem_prekey');
 
 -- Public PreKeys per device
 CREATE TABLE user_key (
                           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                           device_id UUID NOT NULL REFERENCES user_device(id) ON DELETE CASCADE,
                           type user_key_type NOT NULL,
+                          key_id INTEGER NOT NULL DEFAULT 0,
                           public_key TEXT NOT NULL,
-                          is_used BOOLEAN NOT NULL DEFAULT FALSE,    -- for OPKs
+                          signature BYTEA,
+                          is_used BOOLEAN NOT NULL DEFAULT FALSE,
+                          valid_until TIMESTAMPTZ,
+                          claimed_at TIMESTAMPTZ,
+                          kem_scheme TEXT,
                           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_user_key_device_type ON user_key(device_id, type);
+CREATE UNIQUE INDEX uq_user_key_dev_type_id ON user_key(device_id, type, key_id);
+CREATE UNIQUE INDEX uq_single_spk_per_device ON user_key(device_id) WHERE type = 'signed_prekey';
+CREATE INDEX idx_user_key_opk_available ON user_key(device_id, created_at)
+    WHERE type = 'one_time_prekey' AND is_used = FALSE;
 
 -- Conversations
 CREATE TABLE conversation (
@@ -62,6 +89,7 @@ CREATE TABLE message_core (
                               header JSONB
 );
 CREATE INDEX idx_msg_core_conv_created ON message_core(conversation_id, created_at);
+CREATE INDEX idx_msg_core_sender ON message_core(sender_id);
 
 -- Per-device ciphertext
 CREATE TABLE message_delivery (

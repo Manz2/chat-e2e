@@ -1,5 +1,6 @@
 package com.chat.e2e.backend.user;
 
+import com.chat.e2e.backend.api.dto.DTOs;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,7 +44,7 @@ class AppUserControllerTest {
 
     @Test
     void shouldRegisterNewUser() throws Exception {
-        var req = new AppUserController.RegisterUserRequest("alice", "Alice", "pw");
+        var req = new DTOs.RegisterUserRequest("alice", "Alice", "pw");
         var saved = AppUser.builder().id(UUID.randomUUID()).handle("alice").displayName("Alice").build();
 
         when(service.register("alice","Alice","pw")).thenReturn(saved);
