@@ -14,6 +14,8 @@ import java.util.Base64;
 import java.util.Optional;
 import java.util.UUID;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 @Service @RequiredArgsConstructor
 public class DeviceEnrollmentService {
     private final AppUserRepository userRepo;
