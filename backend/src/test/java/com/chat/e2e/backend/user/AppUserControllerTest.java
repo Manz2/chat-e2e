@@ -1,6 +1,6 @@
 package com.chat.e2e.backend.user;
 
-import com.chat.e2e.backend.api.dto.AppUserController;
+import com.chat.e2e.backend.api.AppUserController;
 import com.chat.e2e.backend.api.dto.DTOs;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
