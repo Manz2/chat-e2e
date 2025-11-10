@@ -1,6 +1,7 @@
-package com.chat.e2e.backend.user;
+package com.chat.e2e.backend.api.dto;
 
-import com.chat.e2e.backend.api.dto.DTOs;
+import com.chat.e2e.backend.user.AppUser;
+import com.chat.e2e.backend.user.AppUserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
