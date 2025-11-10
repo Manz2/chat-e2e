@@ -71,4 +71,29 @@ public class DTOs {
 
     // --- neu: Read Receipts ---
     public record ReadRequest(UUID deviceId, UUID messageId) {}
+
+    public record ReadWsMessage(UUID conversationId, UUID messageId) {}
+    public record DeliveredEvent(UUID messageId, UUID conversationId, UUID recipientDeviceId, Instant createdAt) {}
+
+    public record JwtClaims(UUID userId, UUID deviceId) {}
+
+    // Client -> Server
+    public record SendWsMessage(
+            UUID conversationId,
+            String contentType,
+            int epoch,
+            long counter,
+            String ciphertextB64
+    ) {}
+
+    // Server -> Client (nur an Sender als Bestätigung)
+    public record SendAckEvent(
+            UUID messageId,
+            UUID conversationId,
+            Instant createdAt,
+            int deliveries
+    ) {}
+    // Read-Event (Server -> andere)
+    public record ReadEvent(UUID conversationId, UUID messageId, UUID byDeviceId, Instant at) {}
+
 }
