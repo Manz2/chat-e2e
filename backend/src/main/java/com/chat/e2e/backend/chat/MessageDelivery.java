@@ -24,7 +24,7 @@ public class MessageDelivery {
     @Column(name = "recipient_device_id", nullable = false)
     private UUID recipientDeviceId;
 
-    @JdbcTypeCode(SqlTypes.VARBINARY) // oder SqlTypes.BINARY
+    @JdbcTypeCode(org.hibernate.type.SqlTypes.VARBINARY)
     @Column(name = "ciphertext", nullable = false, columnDefinition = "bytea")
     private byte[] ciphertext;
 

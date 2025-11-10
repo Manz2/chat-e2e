@@ -20,4 +20,12 @@ public interface UserDeviceRepository extends JpaRepository<UserDevice, UUID> {
                                       @Param("includeRevoked") boolean includeRevoked);
 
     Optional<UserDevice> findByIdAndUser_Handle(UUID id, String handle);
+
+    @Query("""
+      select d from UserDevice d
+      where d.user.id = :id
+        and (:includeRevoked = true or d.revokedAt is null)
+      order by d.createdAt asc
+    """)
+    List<UserDevice> findByUser_Id(UUID id);
 }

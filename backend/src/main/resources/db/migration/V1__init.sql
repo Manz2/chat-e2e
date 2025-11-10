@@ -125,8 +125,24 @@ CREATE UNIQUE INDEX uq_delivery_per_device ON message_delivery(message_id, recip
 CREATE INDEX idx_delivery_device ON message_delivery(recipient_device_id);
 CREATE INDEX idx_delivery_message ON message_delivery(message_id);
 
--- =========================
--- Empfehlenswerte Policies / Defaults (optional)
--- =========================
--- SET default_transaction_read_only = off;
--- ALTER DATABASE ... SET timezone TO 'UTC';
+
+-- Messages nach Konversation und Zeit
+CREATE INDEX idx_msg_core_conv_time
+    ON message_core (conversation_id, created_at DESC, id);
+
+-- Deliveries: schnelle Suche pro Device
+CREATE INDEX idx_delivery_device_msg
+    ON message_delivery (recipient_device_id, message_id);
+
+-- Nur ungelesene (für schnelle Badges)
+CREATE INDEX idx_delivery_device_read_null
+    ON message_delivery (recipient_device_id)
+    WHERE read_at IS NULL;
+
+-- Optional: undelivered zuerst
+CREATE INDEX idx_delivery_device_delivered_null
+    ON message_delivery (recipient_device_id)
+    WHERE delivered_at IS NULL;
+
+-- Member-Devices für Fanout
+CREATE INDEX idx_cmd_conv ON conversation_member_device (conversation_id);

@@ -40,4 +40,35 @@ public class DTOs {
     ) {}
 
     public record SendMessageResponse(UUID messageId, Instant createdAt, int deliveries) {}
+
+    public record BootstrapResponse(
+            UUID userId,
+            String handle,
+            List<ConversationBrief> conversations,
+            List<UserDeviceBrief> devices
+    ) {}
+
+    public record ConversationBrief(UUID conversationId, boolean isGroup, Instant createdAt,
+                                    List<MemberBrief> members) {}
+    public record MemberBrief(UUID userId, String handle) {}
+    public record UserDeviceBrief(UUID deviceId, String platform, Instant revokedAt, Instant lastSeenAt) {}
+
+    // --- neu: Inbox Pull ---
+    public record InboxResponse(List<DeliveryDTO> items, String nextCursor) {}
+
+    public record DeliveryDTO(
+            UUID deliveryId,
+            UUID messageId,
+            UUID conversationId,
+            String contentType,
+            String msgHeaderJson,   // z.B. {"epoch":7,"counter":1001}
+            String ciphertextB64,   // base64(bytea)
+            Instant createdAt
+    ) {}
+
+    // --- neu: Acks ---
+    public record AckRequest(UUID deviceId, List<UUID> deliveryIds) {}
+
+    // --- neu: Read Receipts ---
+    public record ReadRequest(UUID deviceId, UUID messageId) {}
 }

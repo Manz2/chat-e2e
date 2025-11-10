@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.security.Principal;
 import java.time.Instant;
 import java.util.*;
 
@@ -69,5 +70,29 @@ public class ConversationService {
                     .build();
             memberDeviceRepo.save(cmd);
         }
+    }
+    public DTOs.BootstrapResponse bootstrap(Principal principal) {
+        // Beispiel: principal.name = handle (ansonsten userId ermitteln)
+        String handle = principal.getName();
+        AppUser me = userRepo.findByHandle(handle).orElseThrow(() -> new IllegalArgumentException("user not found"));
+
+        // Conversations + Members
+        List<Conversation> convs = conversationRepo.findAll(); // in echt: nur die, in denen "me" Mitglied ist
+        List<DTOs.ConversationBrief> convBriefs = new ArrayList<>();
+        for (Conversation c : convs) {
+            var members = memberRepo.findAll().stream() // in echt: findByConversationId(c.getId())
+                    .filter(m -> m.getConversationId().equals(c.getId()))
+                    .map(m -> new DTOs.MemberBrief(m.getUserId(), userRepo.findById(m.getUserId()).map(AppUser::getHandle).orElse("?")))
+                    .toList();
+            convBriefs.add(new DTOs.ConversationBrief(c.getId(), c.isGroup(), c.getCreatedAt(), members));
+        }
+
+        // Meine Geräte
+        List<UserDevice> devices = deviceRepo.findByUser_Id(me.getId());
+        List<DTOs.UserDeviceBrief> devBriefs = devices.stream()
+                .map(d -> new DTOs.UserDeviceBrief(d.getId(), d.getPlatform(), d.getRevokedAt(), d.getLastSeenAt()))
+                .toList();
+
+        return new DTOs.BootstrapResponse(me.getId(), me.getHandle(), convBriefs, devBriefs);
     }
 }

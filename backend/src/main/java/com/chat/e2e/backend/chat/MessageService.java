@@ -146,4 +146,64 @@ public class MessageService {
         }
         return new DTOs.SendMessageResponse(core.getId(), core.getCreatedAt(), deliveries);
     }
+    @Transactional(readOnly = true)
+    public List<DTOs.DeliveryDTO> fetchInbox(UUID deviceId, String sinceCursor, int limit) {
+        var cursor = Cursor.decode(sinceCursor); // createdAt + messageId oder null
+        var page = org.springframework.data.domain.PageRequest.of(0, limit);
+        List<Object[]> rows = messageDeliveryRepo.findNextForDevice(deviceId, cursor.createdAt, cursor.messageId, page);
+
+        List<DTOs.DeliveryDTO> out = new ArrayList<>();
+        for (Object[] r : rows) {
+            // mapping: d.id, m.id, m.conversationId, m.contentType, m.header(json), d.ciphertext(bytea), m.createdAt
+            UUID deliveryId = (UUID) r[0];
+            UUID messageId  = (UUID) r[1];
+            UUID convId     = (UUID) r[2];
+            String ctype    = (String) r[3];
+            String header   = (String) r[4];
+            byte[] ct       = (byte[]) r[5];
+            Instant created = (Instant) r[6];
+
+            out.add(new DTOs.DeliveryDTO(
+                    deliveryId, messageId, convId, ctype, header,
+                    Base64.getEncoder().encodeToString(ct), created
+            ));
+        }
+        return out;
+    }
+
+    public String computeNextCursor(List<DTOs.DeliveryDTO> items, String prev) {
+        if (items == null || items.isEmpty()) return prev; // oder null
+        DTOs.DeliveryDTO last = items.get(items.size()-1);
+        return Cursor.encode(last.createdAt(), last.messageId());
+    }
+
+    @Transactional
+    public void ack(UUID deviceId, List<UUID> deliveryIds) {
+        if (deliveryIds == null || deliveryIds.isEmpty()) return;
+        messageDeliveryRepo.bulkSetDeliveredAt(deviceId, deliveryIds, Instant.now());
+    }
+
+    @Transactional
+    public void markRead(UUID deviceId, UUID messageId) {
+        messageDeliveryRepo.updateRead(deviceId, messageId, Instant.now());
+        // optional: publish READ event
+    }
+
+    // --- kleiner Cursor-Helper ---
+    static class Cursor {
+        final Instant createdAt;
+        final UUID messageId;
+        Cursor(Instant c, UUID id){ this.createdAt=c; this.messageId=id; }
+        static Cursor decode(String s){
+            if (s==null || s.isBlank()) return new Cursor(null, null);
+            // simple format: "<epochSecond>:<uuid>"
+            try {
+                String[] p = s.split(":");
+                return new Cursor(Instant.ofEpochSecond(Long.parseLong(p[0])), UUID.fromString(p[1]));
+            } catch(Exception e){ return new Cursor(null, null); }
+        }
+        static String encode(Instant ts, UUID id){
+            return ts==null||id==null ? null : (ts.getEpochSecond() + ":" + id);
+        }
+    }
 }
