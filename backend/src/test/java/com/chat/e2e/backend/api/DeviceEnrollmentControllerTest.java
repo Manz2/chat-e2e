@@ -20,7 +20,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.util.UUID;
 
-import static com.chat.e2e.backend.keys.KeyCurve.x448;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.reset;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -63,18 +62,13 @@ class DeviceEnrollmentControllerTest {
     @Test
     void shouldFinishEnrollment() throws Exception {
         var deviceId = UUID.randomUUID();
-        var finishResp = new DTOs.EnrollmentFinishResponse(
-                new DTOs.DeviceCertificate("payload","sig","ed25519:root-2025"),
-                Instant.parse("2026-01-01T00:00:00Z")
-        );
-        Mockito.when(service.finish(any(), any(), any(), any())).thenReturn(finishResp);
+        Mockito.doNothing().when(service).finish(any(), any(), any(), any());
 
-        var req = new DTOs.EnrollmentFinishRequest("IK",x448, null,"proof");
+        var req = new DTOs.EnrollmentFinishRequest("IK","KX", null,"proof");
 
         mockMvc.perform(post("/v1/devices/{id}/enroll/finish", deviceId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(req)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.deviceCertificate.signature").value("sig"));
+                .andExpect(status().isNoContent());
     }
 }

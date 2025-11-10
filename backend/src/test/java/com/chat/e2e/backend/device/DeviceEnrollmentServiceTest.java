@@ -12,7 +12,6 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
-import static com.chat.e2e.backend.keys.KeyCurve.x25519;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -48,7 +47,7 @@ class DeviceEnrollmentServiceTest {
     }
 
     @Test
-    void finish_shouldStoreCertData() throws Exception {
+    void finish_shouldStoreDeviceKeys() throws Exception {
         // 1) User vorhanden für start()
         when(userRepo.findByHandle("bob"))
                 .thenReturn(Optional.of(AppUser.builder().handle("bob").build()));
@@ -73,18 +72,14 @@ class DeviceEnrollmentServiceTest {
         var kp = kpg.generateKeyPair();
 
         // 6) finish(): nutzt dieselbe deviceId + vorhandene Nonce
-        var resp = service.finish(
+        service.finish(
                 enrolledDeviceId,
-                new DTOs.EnrollmentFinishRequest("IK", x25519, null, "proof"),
+                new DTOs.EnrollmentFinishRequest("IK", "KX", null, "proof"),
                 kp.getPublic(),
                 kp.getPrivate()
         );
 
-        assertThat(resp.deviceCertificate().payload()).isNotBlank();
-        assertThat(resp.deviceCertificate().signature()).isNotBlank();
-        assertThat(resp.certExpiresAt()).isAfter(java.time.Instant.now());
-
-        // Es wurde gespeichert (Cert/Felder gesetzt)
+        // Es wurde gespeichert (Keys gesetzt)
         verify(deviceRepo, atLeastOnce()).save(any(UserDevice.class));
     }
 

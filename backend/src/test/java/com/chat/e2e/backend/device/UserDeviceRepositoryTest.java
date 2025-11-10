@@ -15,7 +15,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.time.Instant;
 import java.util.List;
 
-import static com.chat.e2e.backend.keys.KeyCurve.x25519;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Testcontainers
@@ -47,10 +46,8 @@ class UserDeviceRepositoryTest {
                 .platform(platform)
                 .deviceName(platform + "_dev")
                 .publicIdentityKey("BASE64_IK_" + platform) // NOT NULL
-                .keyCurve(x25519)
+                .publicKxKey("BASE64_KX_" + platform) // NOT NULL in our flow
                 .createdAt(Instant.now())
-                // NICHT setzen: certPayload (jsonb) -> sonst Typkonflikt bei String
-                // .certPayload(objectNode) nur wenn Entity-Feld als JsonNode/Map typisiert ist
                 .build();
     }
 

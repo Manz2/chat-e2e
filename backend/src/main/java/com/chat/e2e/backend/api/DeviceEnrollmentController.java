@@ -26,11 +26,12 @@ public class DeviceEnrollmentController {
     }
 
     @PostMapping("/{deviceId}/enroll/finish")
-    @Operation(summary="Finish device enrollment (issue device certificate)")
-    public ResponseEntity<DTOs.EnrollmentFinishResponse> finish(@PathVariable UUID deviceId,
-                                                                @RequestBody DTOs.EnrollmentFinishRequest req) {
-        return ResponseEntity.ok(service.finish(deviceId, req, serverSigKeyPair.getPublic(), serverSigKeyPair.getPrivate()));
+    public ResponseEntity<Void> finish(@PathVariable UUID deviceId,
+                                       @RequestBody DTOs.EnrollmentFinishRequest req) {
+        service.finish(deviceId, req);
+        return ResponseEntity.noContent().build();
     }
+
 
     @PostMapping("/{deviceId}/revoke")
     @Operation(summary="Revoke a device (owner only)")

@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.*;
+import java.security.spec.X509EncodedKeySpec;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Optional;
@@ -33,43 +34,115 @@ public class DeviceEnrollmentService {
     }
 
     @Transactional
-    public DTOs.EnrollmentFinishResponse finish(UUID deviceId, DTOs.EnrollmentFinishRequest req, PublicKey serverSigPublic, PrivateKey serverSigPrivate) {
-        UserDevice dev = deviceRepo.findById(deviceId).orElseThrow(() -> new IllegalArgumentException("device not found"));
-        String nonce = Optional.ofNullable(nonces.get(deviceId)).orElseThrow(() -> new IllegalArgumentException("nonce not found"));
-        if (Instant.now().isAfter(nonceExpiry.get(deviceId))) throw new IllegalArgumentException("nonce expired");
+    public void finish(UUID deviceId, DTOs.EnrollmentFinishRequest req) {
+        // 0) Basis-Checks
+        if (deviceId == null) throw new IllegalArgumentException("deviceId missing");
+        if (req == null) throw new IllegalArgumentException("request missing");
+        if (isBlank(req.ikPub()) || isBlank(req.kxPub()) || isBlank(req.bindingSig()) || isBlank(req.proof())) {
+            throw new IllegalArgumentException("ikPub/kxPub/bindingSig/proof missing");
+        }
 
-        // TODO: Verify proof-of-possession using ikPub (client signed SHA256(nonce||ikPub||deviceId))
-        // (hier nur Platzhalter)
-        if (req.proof() == null || req.proof().isBlank()) throw new IllegalArgumentException("invalid proof");
+        // 1) Gerät & Nonce laden/prüfen
+        var dev = deviceRepo.findById(deviceId)
+                .orElseThrow(() -> new IllegalArgumentException("device not found"));
 
-        // Build cert payload (JSON string minimal)
-        String payload = """
-          {"ver":1,"device_id":"%s","ik_pub":"%s","key_curve":"%s","issued_at":"%s"}
-          """.formatted(deviceId, req.ikPub(), req.keyCurve(), Instant.now().toString());
+        var nonce = nonces.get(deviceId);
+        var exp   = nonceExpiry.get(deviceId);
+        if (nonce == null || exp == null) throw new IllegalArgumentException("nonce not found");
+        if (Instant.now().isAfter(exp)) throw new IllegalArgumentException("nonce expired");
 
-        // Sign with server's Ed25519 (or what you configured)
+        // 2) Eingaben dekodieren (SPKI in Base64 erwartet)
+        byte[] ikSpki   = b64(req.ikPub());
+        byte[] kxSpki   = b64(req.kxPub());
+        byte[] bindSig  = b64(req.bindingSig());
+        byte[] proofSig = b64(req.proof());
+
+        // Ed25519 PublicKey aus X.509/SPKI
+        PublicKey ikPub;
         try {
-            var sig = Signature.getInstance("Ed25519");
-            sig.initSign(serverSigPrivate);
-            sig.update(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            String signature = Base64.getEncoder().encodeToString(sig.sign());
-
-            dev.setPublicIdentityKey(req.ikPub());
-            dev.setKeyCurve(req.keyCurve());
-            dev.setPqkemPublicKey(req.pqkemPub() == null ? null : Base64.getDecoder().decode(req.pqkemPub()));
-            dev.setCertPayload(payload);
-            dev.setCertSignature(Base64.getDecoder().decode(signature));
-            dev.setCertIssuedAt(Instant.now());
-            dev.setCertExpiresAt(Instant.now().plusSeconds(31536000)); // 1y
-            dev.setCertAlg("Ed25519");
-            deviceRepo.save(dev);
-
-            nonces.remove(deviceId); nonceExpiry.remove(deviceId);
-            return new DTOs.EnrollmentFinishResponse(new DTOs.DeviceCertificate(payload, signature, "ed25519:root-2025"), dev.getCertExpiresAt());
+            ikPub = KeyFactory.getInstance("Ed25519")
+                    .generatePublic(new X509EncodedKeySpec(ikSpki));
         } catch (Exception e) {
+            throw new IllegalArgumentException("invalid ikPub (not Ed25519 SPKI)", e);
+        }
+
+        // 3) Binding prüfen: Sign_ed25519( SHA256("bind:" || kxSpki) )
+        byte[] bindMsg = sha256(concat("bind:".getBytes(UTF_8), kxSpki));
+        if (!verifyEd25519(ikPub, bindMsg, bindSig)) {
+            throw new IllegalArgumentException("invalid bindingSig");
+        }
+
+        // 4) Proof-of-Possession prüfen:
+        // Sign_ed25519( SHA256("enroll:" || deviceId || nonceB64 || ikSpki || kxSpki) )
+        byte[] enrollMsg = sha256(concat(
+                "enroll:".getBytes(UTF_8),
+                deviceId.toString().getBytes(UTF_8),
+                nonce.getBytes(UTF_8),   // wir verwenden die B64-Nonce als Bytes
+                ikSpki,
+                kxSpki
+        ));
+        if (!verifyEd25519(ikPub, enrollMsg, proofSig)) {
+            throw new IllegalArgumentException("invalid proof");
+        }
+
+        // 5) Optional: Platform/DeviceName validieren & setzen
+        if (!isBlank(req.platform())) {
+            var p = req.platform().toLowerCase();
+            if (!java.util.Set.of("ios","android","web","desktop").contains(p))
+                throw new IllegalArgumentException("invalid platform");
+            dev.setPlatform(p);
+        }
+        if (!isBlank(req.deviceName())) dev.setDeviceName(req.deviceName());
+
+        // 6) Persistieren (öffentliche Schlüssel + Binding)
+        dev.setPublicIdentityKey(req.ikPub());   // Base64(SPKI) speichern
+        dev.setPublicKxKey(req.kxPub());         // Base64(SPKI) speichern
+        dev.setIdentityBindingSig(bindSig);      // raw bytes
+        dev.setLastSeenAt(Instant.now());
+        deviceRepo.save(dev);
+
+        // 7) Aufräumen (Replay verhindern)
+        nonces.remove(deviceId);
+        nonceExpiry.remove(deviceId);
+    }
+
+    /* ===== Helpers ===== */
+
+    private static byte[] b64(String s) {
+        return Base64.getDecoder().decode(s);
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.trim().isEmpty();
+    }
+
+    private static byte[] sha256(byte[] data) {
+        try {
+            var md = MessageDigest.getInstance("SHA-256");
+            return md.digest(data);
+        } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException(e);
         }
     }
+
+    private static byte[] concat(byte[]... arrs) {
+        int len = 0; for (var a : arrs) len += a.length;
+        byte[] out = new byte[len];
+        int p = 0; for (var a : arrs) { System.arraycopy(a, 0, out, p, a.length); p += a.length; }
+        return out;
+    }
+
+    private static boolean verifyEd25519(PublicKey ikPub, byte[] msg, byte[] sig) {
+        try {
+            var verifier = Signature.getInstance("Ed25519");
+            verifier.initVerify(ikPub);
+            verifier.update(msg);
+            return verifier.verify(sig);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
 
     @Transactional
     public void revoke(String handle, UUID deviceId) {

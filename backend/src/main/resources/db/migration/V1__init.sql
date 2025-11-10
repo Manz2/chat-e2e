@@ -1,106 +1,132 @@
 -- V1__init.sql
+-- Postgres + pgcrypto für gen_random_uuid()
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+-- =========================
 -- Users
+-- =========================
 CREATE TABLE app_user (
-                          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                          handle TEXT UNIQUE NOT NULL,
-                          display_name TEXT,
-                          password_hash TEXT NOT NULL,
-                          two_fa_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-                          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                          id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                          handle          TEXT UNIQUE NOT NULL,
+                          display_name    TEXT,
+                          password_hash   TEXT NOT NULL,
+                          two_fa_enabled  BOOLEAN NOT NULL DEFAULT FALSE,
+                          created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-
+-- =========================
 -- Devices
+-- - Ed25519 (Identität/Signaturen)
+-- - X25519 (Schlüsseltausch / sealed boxes)
+-- =========================
 CREATE TABLE user_device (
-                             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                             user_id UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
-                             device_name TEXT,
-                             platform TEXT,                                   -- "ios","android","web","desktop"
-                             public_identity_key TEXT NOT NULL,               -- IK_pub (Base64/PEM)
-                             public_identity_key_id INTEGER,
-                             public_identity_key_sig BYTEA,
-                             key_curve TEXT DEFAULT 'x25519',
-                             pqkem_public_key BYTEA,                          -- PQXDH (z. B. Kyber Public Key)
-                             cert_payload JSONB,
-                             cert_issued_at TIMESTAMPTZ,
-                             cert_expires_at TIMESTAMPTZ,
-                             cert_alg TEXT DEFAULT 'Ed25519',
-                             cert_serial TEXT,
-                             revoked_at TIMESTAMPTZ,
-                             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                             last_seen_at TIMESTAMPTZ,
-                             CONSTRAINT chk_key_curve CHECK (key_curve IN ('x25519','x448')),
-                             CONSTRAINT chk_cert_times CHECK (
-                                 cert_issued_at IS NULL
-                                     OR cert_expires_at IS NULL
-                                     OR cert_expires_at > cert_issued_at
+                             id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                             user_id                UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+                             device_name            TEXT,
+                             platform               TEXT, -- 'ios' | 'android' | 'web' | 'desktop'
+                             public_identity_key    TEXT NOT NULL,   -- Ed25519 public (Base64/PEM/Text)
+                             public_kx_key          TEXT NOT NULL,   -- X25519 public  (Base64/PEM/Text)
+                             identity_binding_sig   BYTEA,           -- optional: Sig, die beide Public Keys bindet
+                             created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+                             last_seen_at           TIMESTAMPTZ,
+                             revoked_at             TIMESTAMPTZ,
+                             CONSTRAINT chk_platform CHECK (
+                                 platform IS NULL OR platform IN ('ios','android','web','desktop')
                                  )
 );
+
 CREATE INDEX idx_user_device_user ON user_device(user_id);
 
+-- Für saubere FKs auf (device_id, user_id)
+CREATE UNIQUE INDEX uq_user_device_id_user ON user_device(id, user_id);
 
--- Key type enum
-CREATE TYPE user_key_type AS ENUM ('signed_prekey', 'one_time_prekey', 'pqkem_prekey');
-
--- Public PreKeys per device
-CREATE TABLE user_key (
-                          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                          device_id UUID NOT NULL REFERENCES user_device(id) ON DELETE CASCADE,
-                          type user_key_type NOT NULL,
-                          key_id INTEGER NOT NULL DEFAULT 0,
-                          public_key TEXT NOT NULL,
-                          signature BYTEA,
-                          is_used BOOLEAN NOT NULL DEFAULT FALSE,
-                          valid_until TIMESTAMPTZ,
-                          claimed_at TIMESTAMPTZ,
-                          kem_scheme TEXT,
-                          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX idx_user_key_device_type ON user_key(device_id, type);
-CREATE UNIQUE INDEX uq_user_key_dev_type_id ON user_key(device_id, type, key_id);
-CREATE UNIQUE INDEX uq_single_spk_per_device ON user_key(device_id) WHERE type = 'signed_prekey';
-CREATE INDEX idx_user_key_opk_available ON user_key(device_id, created_at)
-    WHERE type = 'one_time_prekey' AND is_used = FALSE;
-
--- Conversations
+-- =========================
+-- Conversations & Members
+-- =========================
 CREATE TABLE conversation (
-                              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                              is_group BOOLEAN NOT NULL DEFAULT FALSE,
+                              id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                              is_group   BOOLEAN NOT NULL DEFAULT FALSE,
                               created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE conversation_member (
                                      conversation_id UUID NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
-                                     user_id UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
-                                     role TEXT DEFAULT 'member',
+                                     user_id         UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+                                     role            TEXT DEFAULT 'member',
                                      PRIMARY KEY (conversation_id, user_id)
 );
+
 CREATE INDEX idx_conv_member_user ON conversation_member(user_id);
 
--- Messages (logical)
-CREATE TABLE message_core (
-                              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                              conversation_id UUID NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
-                              sender_id UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
-                              created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                              content_type TEXT NOT NULL DEFAULT 'text',
-                              header JSONB
+-- Optional granular: welche Geräte gehören (technisch) zur Conversation
+CREATE TABLE conversation_member_device (
+                                            conversation_id UUID NOT NULL,
+                                            user_id         UUID NOT NULL,
+                                            device_id       UUID NOT NULL,
+                                            PRIMARY KEY (conversation_id, device_id),
+    -- Gerätezuordnung nur für existierende Mitglieder
+                                            FOREIGN KEY (conversation_id, user_id)
+                                                REFERENCES conversation_member(conversation_id, user_id) ON DELETE CASCADE,
+    -- Gerät muss zum User gehören
+                                            FOREIGN KEY (device_id, user_id)
+                                                REFERENCES user_device(id, user_id) ON DELETE CASCADE
 );
+
+CREATE INDEX idx_cmd_conversation ON conversation_member_device(conversation_id);
+CREATE INDEX idx_cmd_device ON conversation_member_device(device_id);
+
+-- =========================
+-- Conversation Epochs (nur Meta)
+-- Clients kennen/halten den CK je Epoche;
+-- Server speichert KEINEN Klartext-Schlüssel.
+-- =========================
+CREATE TABLE conversation_epoch (
+                                    conversation_id UUID NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+                                    epoch           INTEGER NOT NULL,
+                                    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+                                    PRIMARY KEY (conversation_id, epoch)
+);
+
+-- Optional nützlich: letztes bekanntes Epoch-Meta
+CREATE INDEX idx_conv_epoch_conv ON conversation_epoch(conversation_id, epoch);
+
+-- =========================
+-- Messages (logisch)
+-- header: z.B. { "type":"text", "epoch":3, "counter":1042, "content_type":"text/plain" }
+-- =========================
+CREATE TABLE message_core (
+                              id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                              conversation_id  UUID NOT NULL REFERENCES conversation(id) ON DELETE CASCADE,
+                              sender_id        UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+                              created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+                              content_type     TEXT NOT NULL DEFAULT 'text/plain',
+                              header           JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+
 CREATE INDEX idx_msg_core_conv_created ON message_core(conversation_id, created_at);
 CREATE INDEX idx_msg_core_sender ON message_core(sender_id);
 
--- Per-device ciphertext
+-- =========================
+-- Per-Device Delivery (Ciphertexts)
+-- msg_header: minimal { "epoch": int, "counter": int }
+-- ciphertext: AEAD (z. B. XChaCha20-Poly1305)
+-- =========================
 CREATE TABLE message_delivery (
-                                  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                                  message_id UUID NOT NULL REFERENCES message_core(id) ON DELETE CASCADE,
-                                  recipient_device_id UUID NOT NULL REFERENCES user_device(id) ON DELETE CASCADE,
-                                  ciphertext BYTEA NOT NULL,
-                                  ratchet_header JSONB,
-                                  delivered_at TIMESTAMPTZ,
-                                  read_at TIMESTAMPTZ
+                                  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                                  message_id           UUID NOT NULL REFERENCES message_core(id) ON DELETE CASCADE,
+                                  recipient_device_id  UUID NOT NULL REFERENCES user_device(id) ON DELETE CASCADE,
+                                  ciphertext           BYTEA NOT NULL,
+                                  msg_header           JSONB,  -- { "epoch": ..., "counter": ... }
+                                  delivered_at         TIMESTAMPTZ,
+                                  read_at              TIMESTAMPTZ
 );
+
 CREATE UNIQUE INDEX uq_delivery_per_device ON message_delivery(message_id, recipient_device_id);
 CREATE INDEX idx_delivery_device ON message_delivery(recipient_device_id);
 CREATE INDEX idx_delivery_message ON message_delivery(message_id);
+
+-- =========================
+-- Empfehlenswerte Policies / Defaults (optional)
+-- =========================
+-- SET default_transaction_read_only = off;
+-- ALTER DATABASE ... SET timezone TO 'UTC';

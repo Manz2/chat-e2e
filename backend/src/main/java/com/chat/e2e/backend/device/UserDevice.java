@@ -1,11 +1,8 @@
 package com.chat.e2e.backend.device;
 
-import com.chat.e2e.backend.keys.KeyCurve;
 import com.chat.e2e.backend.user.AppUser;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -33,30 +30,11 @@ public class UserDevice {
     @Column(name = "public_identity_key", nullable = false, length = 4096)
     private String publicIdentityKey;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name="key_curve") private KeyCurve keyCurve;
+    @Column(name = "public_kx_key", nullable = false, length = 4096)
+    private String publicKxKey;
 
-    @Column(name = "pqkem_public_key", columnDefinition = "bytea")
-    private byte[] pqkemPublicKey;
-
-    @Column(name = "public_identity_key_sig", columnDefinition = "bytea")
-    private byte[] certSignature;
-
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "cert_payload", columnDefinition = "jsonb")
-    private String certPayload;
-
-    @Column(name = "cert_issued_at")
-    private Instant certIssuedAt;
-
-    @Column(name = "cert_expires_at")
-    private Instant certExpiresAt;
-
-    @Column(name = "cert_alg")
-    private String certAlg;
-
-    @Column(name = "cert_serial")
-    private String certSerial;
+    @Column(name = "identity_binding_sig", columnDefinition = "bytea")
+    private byte[] identityBindingSig;
 
     @Column(name = "revoked_at")
     private Instant revokedAt;
